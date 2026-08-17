@@ -3,7 +3,7 @@
 
 <img align="right" height="128" src="soggymarker.png" alt="A picture of Shark the Soggy Cat">
 
-Quick single page demo I made trying to prove a point to a friend about performance, and also showing said friend that having flying objects is possible without canvases.
+Quick single page demo I made trying to prove a point to a friend about performance, and also showing said friend that having objects flying around is possible without canvases.
 
 - **2D Canvas API demo: <https://einefoxtail.github.io/soggyquarium/>**
 - CSS Transforms demo: <https://einefoxtail.github.io/soggyquarium/index.dom.html>
