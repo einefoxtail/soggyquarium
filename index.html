@@ -46,7 +46,7 @@
             bottom: 0;
             left: 0;
             width: 100%;
-            padding: 2em;
+            padding: 1.5em;
             box-sizing: border-box;
 
             /* filter:
@@ -79,9 +79,9 @@
             input#amount {
                 transform: scale(3);
 
-                max-width: calc(24em / 3);
+                max-width: calc(32em / 3);
                 width: calc(100% / 3);
-                margin-top: 2em;
+                margin: 2em 0;
             }
         }
     </style>
@@ -110,10 +110,10 @@
             this.iter      = iter;
             this.opacity   = 0;
             this.aquarium  = aquarium;
-            this.scale     = params?.scale     ?? rndFloat(0.4, 2.2);
+            this.scale     = params?.scale     ?? rndFloat(1.3, 1.8);
             this.direction = params?.direction ?? rndFloat(0.0, Math.PI * 2);
             this.rotation  = params?.rotation  ?? rndFloat(0.0, Math.PI * 2);
-            this.speed     = params?.speed     ?? rndFloat(10.0, 50.0);
+            this.speed     = params?.speed     ?? rndFloat(5.0, 80.0);
             this.flipped   = params?.flipped   ?? Math.round(Math.random()) * 180;
             this.img   = aquarium.appendChild(
                 img.cloneNode(true)
@@ -171,20 +171,23 @@
         {
             const hidden = (this.iter > this.aquarium.creatureLimit - 1);
             if (hidden && this.opacity <= 0.0) return;
-            this.opacity += this.aquarium.deltaTime * (hidden ? -1 : 1) * (this.speed / hidden ? 4 : 16);
+            this.opacity += this.aquarium.deltaTime * (hidden ? -1 : 1) * (this.speed / (hidden ? 8 : 16));
             this.opacity = clamp(0.0, this.opacity, 1.0);
 
             const prevAlpha = this.aquarium.ctx.globalAlpha;
 
-            const easedOpacity = hidden ? easeIn(this.opacity) : easeOut(this.opacity);
+            const easedOpacity = hidden ? easeOut(this.opacity) : easeOut(this.opacity);
 
             this.aquarium.ctx.globalAlpha = easedOpacity;
 
             const size =
             {
-                w: this.scale * this.size.w * easedOpacity,
-                h: this.scale * this.size.h * easedOpacity,
+                w: this.scale * this.size.w,
+                h: this.scale * this.size.h,
             };
+            size.w -= size.w * easedOpacity / 4;
+            size.h -= size.h * easedOpacity / 4;
+            // not sure why it zooms in rather than out, something's wrong, but i don't care as I prefer it that way anyway
 
             // this.aquarium.ctx.fillRect(
             //     Math.floor(this.position.x / this.aquarium.width * 50) * this.aquarium.width / 50,
@@ -236,11 +239,13 @@
                 w: this.clientWidth,
                 h: this.clientHeight,
             };
-            this.creatureMaxAmount = 5120;
+            this.creatureMaxAmount = 4096;
             this.creatureLimit = 20;
-            document.getElementById("amount").min   = 1;
-            document.getElementById("amount").max   = this.creatureMaxAmount;
-            document.getElementById("amount").value = this.creatureLimit;
+            document.getElementById("amount").min   = 0;
+            document.getElementById("amount").max   = 1;
+            document.getElementById("amount").step  = 1e-32; // never ask a magic number its purpose
+            document.getElementById("amount").value = 
+                Math.sqrt(Math.sqrt(this.creatureLimit / this.creatureMaxAmount));
             document.getElementById("amount-display").innerText = this.creatureLimit;
 
             for(let iter = 0; iter < this.creatureMaxAmount; iter++)
@@ -251,7 +256,8 @@
                         this,
                         soggyCatImg,
                         {
-                            size: {
+                            size:
+                            {
                                 w: 111,
                                 h: 128,
                             }
@@ -266,9 +272,9 @@
                 this.deltaTime = (currentTime - this.prevTime) / 1000;
                 this.prevTime  = currentTime;
 
-                this.ctx.clearRect(0, 0, this.width, this.height); // implement clear zones
+                this.ctx.clearRect(0, 0, this.width, this.height); // todo?: implement some sort of clear zones (but is it necessary here...?)
 
-                for(let i = 0; i < this.creatureMaxAmount; i++) // we don't care anymore about the invisible soogs
+                for(let i = 0; i < this.creatureMaxAmount; i++) // we care about the invisible soogs
                 {
                     this.creatures[i].updateBehaviour();
                     this.creatures[i].draw();
@@ -309,6 +315,26 @@
                     h: this.height,
                 }
             });
+
+            this.onclick = _ =>
+            {
+                for(let i = 0; i < this.creatureLimit; i++)
+                {
+                    this.creatures[i].direction  += rndFloat(-90.0, 90.0);
+                    this.creatures[i].speed = Math.max(5.0, this.creatures[i].speed + rndFloat(-40.0, 40.0));
+                }
+            };
+
+            document.getElementById("amount").addEventListener("input", event =>
+            {
+                let askedLimit = Math.pow(event.target.value, 4);
+                askedLimit *= this.creatureMaxAmount;
+                askedLimit = Math.round(askedLimit);
+                if (askedLimit == 0) askedLimit = 1; // ugly, but it works.
+
+                this.creatureLimit = askedLimit;
+                document.getElementById("amount-display").innerText = askedLimit;
+            });
         }
 
         disconnectedCallback()
@@ -323,12 +349,5 @@
     }
 
     customElements.define("sog-aquarium", SogAquariumElement, { extends: "canvas" });
-
-    document.getElementById("amount").addEventListener("input", event =>
-    {
-        const amount = Math.round(event.target.value);
-        document.getElementById("sog-aquarium").creatureLimit = amount;
-        document.getElementById("amount-display").innerText = amount;
-    });
 </script>
 </html>
