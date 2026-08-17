@@ -321,7 +321,8 @@
                 for(let i = 0; i < this.creatureLimit; i++)
                 {
                     this.creatures[i].direction  += rndFloat(-90.0, 90.0);
-                    this.creatures[i].speed = Math.max(5.0, this.creatures[i].speed + rndFloat(-40.0, 40.0));
+                    this.creatures[i].speed =
+                        clamp(5.0, this.creatures[i].speed + rndFloat(-25.0, 20.0), 80.0);
                 }
             };
 
