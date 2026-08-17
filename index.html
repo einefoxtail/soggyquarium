@@ -35,7 +35,9 @@
 
         img {
             transition: filter 0.64s, opacity 0.64s;
-
+            will-change: transform;
+            user-select: none;
+            pointer-events: none;
             
             &:hover {
                 filter:blur(5px);
@@ -54,7 +56,7 @@
             bottom: 0;
             left: 0;
             width: 100%;
-            padding: 2.5em;
+            padding: 2em;
             box-sizing: border-box;
 
             /* filter:
@@ -64,7 +66,24 @@
             span#amount-display {
                 font-size: 6em;
                 font-weight: 900;
+            }
+
+            span#fps-display {
+                font-size: 2em;
+
+                &::after { content: " fps" }
+            }
+
+            span#dt-display {
+                font-size: 1.2em;
+
+                &::after { content: " ms" }
+            }
+
+            span {
                 text-shadow: 0 10px 40px black;
+                line-height: 1.0;
+                font-weight: 900;
             }
 
             input#amount {
@@ -72,6 +91,7 @@
 
                 max-width: calc(24em / 3);
                 width: calc(100% / 3);
+                margin-top: 2em;
             }
         }
     </style>
@@ -79,8 +99,10 @@
 <body>
     <sog-aquarium></sog-aquarium>
     <debug-window>
+        <span id="fps-display">---</span>
+        <span id="dt-display">---</span>
         <span id="amount-display">20</span>
-        <input type="range" name="amount" id="amount" min="1" max="640" value="20">
+        <input type="range" name="amount" id="amount" min="1" max="2560" value="20">
     </debug-window>
 
     <script>
@@ -97,10 +119,15 @@
                 this.direction = direction ?? rndFloat(0.0, Math.PI * 2);
                 this.rotation  = rotation  ?? rndFloat(0.0, 360.0);
                 this.speed     = speed     ?? rndFloat(10.0, 50.0);
-                this.flipped   = flipped   ?? Math.round(Math.random());
+                this.flipped   = flipped   ?? Math.round(Math.random()) * 180;
                 this.element   = aquarium.appendChild(
                     element.cloneNode(true)
                 );
+                this.size =
+                {
+                    w: this.element.clientWidth,
+                    h: this.element.clientHeight
+                };
                 this.position = 
                 {
                     x: position?.x ?? rndFloat(0.0, this.aquarium.clientWidth),
@@ -108,25 +135,21 @@
                 };
                 this.origin = { x: 0.5, y: 0.5 };
                 this.shown = true;
+                this.matrix = new DOMMatrix();
             }
 
             updateBehaviour()
             {
-                if (this.aquarium.sogLimit < this.iter) return;
+                if (this.iter > this.aquarium.creatureLimit) return;
 
                 const speed = this.aquarium.deltaTime * this.speed; 
                 this.position.x += Math.sin(this.direction)  * speed;
                 this.position.y += -Math.cos(this.direction) * speed;
                 this.rotation += speed / 4;
-                this.rotation %= 360.0;
 
-                const overflow = Math.max(this.element.clientWidth, this.element.clientHeight) * this.scale;
-
-                // const isClipping =
-                //     this.position.x < -overflow ||
-                //     this.position.y < -overflow ||
-                //     this.position.x > this.aquarium.clientWidth  + overflow ||
-                //     this.position.y > this.aquarium.clientHeight + overflow;
+                const overflow = Math.max(this.size.w, this.size.h) * this.scale;
+                // const overflow = Math.max(111, 128) * this.scale;
+                // const overflow = 0;
 
                 // there has to be a better way to do the following
 
@@ -152,34 +175,47 @@
 
             updateTransform()
             {
-                switch (this.aquarium.creatureLimit - 1 < this.iter)
+                switch (this.iter > this.aquarium.creatureLimit - 1) // making this a switch was probably useles
                 {
                     case true:
                         if (this.shown)
                         {
                             this.shown = false;
-                            this.element.style.display = "none";
+                            this.element.style.opacity = "0";
                         }
                         return;
                     case false:
                         if (!this.shown)
                         {
                             this.shown = true;
-                            this.element.style.display = "";
+                            this.element.style.opacity = "1";
                         }
                 }
 
                 const position =
                 {
-                    x: this.position.x - this.origin.x * this.element.clientWidth,
-                    y: this.position.y - this.origin.y * this.element.clientHeight,
+                    x: this.position.x - this.origin.x * this.size.w,
+                    y: this.position.y - this.origin.y * this.size.h,
                 }
-                this.element.style.transform = `
-                    translate3D(${position.x}px, ${position.y}px, 0)
-                    rotateY(${this.flipped * 180}deg)
-                    rotateZ(${(this.flipped * 2 - 1) * this.rotation}deg)
-                    scale(${this.scale})
-                `;
+
+                if (this.element.attributeStyleMap)
+                {
+                    this.element.attributeStyleMap.set('transform', new CSSTransformValue([
+                        new CSSTranslate(CSS.px(position.x), CSS.px(position.y), CSS.px(0)),
+                        new CSSRotate(0, 1, 0, CSS.deg(this.flipped * 180)),
+                        new CSSRotate(0, 0, 1, CSS.deg(this.rotation)),
+                        new CSSScale(this.scale, this.scale)
+                    ]));
+                }
+                else
+                {
+                    this.element.style.transform = `
+                        translate3d(${position.x}px, ${position.y}px, 0)
+                        rotateY(${this.flipped * 180}deg)
+                        rotateZ(${this.rotation}deg)
+                        scale(${this.scale})
+                    `;
+                }
             }
         }
 
@@ -197,9 +233,10 @@
                 elementToClone.setAttribute("draggable", false);
                 elementToClone.style.height = "128px";
 
+                this.creatureLimit = 2560;
                 this.creatures = [];
 
-                for(let i = 0; i <= 640; i++)
+                for(let i = 0; i < this.creatureLimit; i++)
                 {
                     this.creatures.push(
                         new Creature(
@@ -215,27 +252,35 @@
                     );
                 }
 
-                console.log(this.creatures);
-
-                this.creatureLimit = 20;
-
                 this.prevTime  = 0;
                 this.deltaTime = 0;
+                this.frame     = 0;
                 this.animate = currentTime =>
                 {
+                    if (this.frame == 5) this.creatureLimit = 20;
+                    // I have to investigate why it fixes the lag on chromium doing it this way...
+                    // probably some strange browser optimisation shenanigans.
+
                     currentTime ??= 0;
                     this.deltaTime = (currentTime - this.prevTime) / 1000;
                     this.prevTime  = currentTime;
 
-                    this.creatures.forEach(creature => {
+                    for (let creature of this.creatures)
+                    {
                         creature.updateBehaviour();
                         creature.updateTransform();
-                    });
+                    }
 
+                    document.getElementById("fps-display").innerText =
+                        Math.round(1 / this.deltaTime);
+                    document.getElementById("dt-display").innerText =
+                        Math.round(this.deltaTime * 1000);
+
+                    this.frame++;
                     requestAnimationFrame(this.animate);
                 };
 
-                this.animate();
+                window.onload = _ => this.animate();
 
                 this.prevSize =
                 {
