@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>soggyquarium</title>
+    <style>
+        body, html {
+            height: 100%;
+        }
+
+        body {
+            background-color: #777;
+            color: white;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            margin: 0;
+        }
+
+        sog-aquarium {
+            display: block;
+            overflow: hidden;
+            background-color: rgb(63, 64, 96);
+            background-image: linear-gradient(transparent 75%, rgb(101, 105, 90));
+            width:  100%;
+            height: 100%;
+
+            position: relative;
+
+            > * {
+                position: absolute;
+                top: 0;
+                left: 0;
+            }
+        }
+
+        img {
+            transition: filter 0.64s, opacity 0.64s;
+
+            
+            &:hover {
+                filter:blur(5px);
+                opacity: 0.5;
+            }
+        }
+
+        debug-window {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            gap: 0em;
+            
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            padding: 2.5em;
+            box-sizing: border-box;
+
+            /* filter:
+                drop-shadow(0px 0px 20px black)
+                drop-shadow(0px 0px 20px black); */
+
+            span#amount-display {
+                font-size: 6em;
+                font-weight: 900;
+                text-shadow: 0 10px 40px black;
+            }
+
+            input#amount {
+                transform: scale(3);
+
+                max-width: calc(24em / 3);
+                width: calc(100% / 3);
+            }
+        }
+    </style>
+</head>
+<body>
+    <sog-aquarium></sog-aquarium>
+    <debug-window>
+        <span id="amount-display">20</span>
+        <input type="range" name="amount" id="amount" min="1" max="640" value="20">
+    </debug-window>
+
+    <script>
+        const rndFloat = (min, max) => Math.random() * (max - min) + min;
+
+        class Creature
+        {
+            // I should probably put a params object instead of whatever that is
+            constructor(iter, aquarium, element, size, scale, position, speed, direction, rotation, flipped)
+            {
+                this.iter      = iter;
+                this.aquarium  = aquarium;
+                this.scale     = scale     ?? rndFloat(0.5, 1.0);
+                this.direction = direction ?? rndFloat(0.0, Math.PI * 2);
+                this.rotation  = rotation  ?? rndFloat(0.0, 360.0);
+                this.speed     = speed     ?? rndFloat(10.0, 50.0);
+                this.flipped   = flipped   ?? Math.round(Math.random());
+                this.element   = aquarium.appendChild(
+                    element.cloneNode(true)
+                );
+                this.position = 
+                {
+                    x: position?.x ?? rndFloat(0.0, this.aquarium.clientWidth),
+                    y: position?.y ?? rndFloat(0.0, this.aquarium.clientHeight)
+                };
+                this.origin = { x: 0.5, y: 0.5 };
+                this.shown = true;
+            }
+
+            updateBehaviour()
+            {
+                if (this.aquarium.sogLimit < this.iter) return;
+
+                const speed = this.aquarium.deltaTime * this.speed; 
+                this.position.x += Math.sin(this.direction)  * speed;
+                this.position.y += -Math.cos(this.direction) * speed;
+                this.rotation += speed / 4;
+                this.rotation %= 360.0;
+
+                const overflow = Math.max(this.element.clientWidth, this.element.clientHeight) * this.scale;
+
+                // const isClipping =
+                //     this.position.x < -overflow ||
+                //     this.position.y < -overflow ||
+                //     this.position.x > this.aquarium.clientWidth  + overflow ||
+                //     this.position.y > this.aquarium.clientHeight + overflow;
+
+                // there has to be a better way to do the following
+
+                this.isClipping =
+                {
+                    top:     this.position.y < -overflow,
+                    bottom:  this.position.y > this.aquarium.clientHeight + overflow,
+                    left:    this.position.x < -overflow,
+                    right:   this.position.x > this.aquarium.clientWidth  + overflow,
+                    overall: false
+                }
+                this.isClipping.overall = 
+                    this.isClipping.top    ||
+                    this.isClipping.bottom ||
+                    this.isClipping.left   ||
+                    this.isClipping.right;
+
+                if (this.isClipping.top)    this.position.y = this.aquarium.clientHeight + overflow;
+                if (this.isClipping.bottom) this.position.y = -overflow;
+                if (this.isClipping.left)   this.position.x = this.aquarium.clientWidth + overflow;
+                if (this.isClipping.right)  this.position.x = -overflow;
+            }
+
+            updateTransform()
+            {
+                switch (this.aquarium.creatureLimit - 1 < this.iter)
+                {
+                    case true:
+                        if (this.shown)
+                        {
+                            this.shown = false;
+                            this.element.style.display = "none";
+                        }
+                        return;
+                    case false:
+                        if (!this.shown)
+                        {
+                            this.shown = true;
+                            this.element.style.display = "";
+                        }
+                }
+
+                const position =
+                {
+                    x: this.position.x - this.origin.x * this.element.clientWidth,
+                    y: this.position.y - this.origin.y * this.element.clientHeight,
+                }
+                this.element.style.transform = `
+                    translate3D(${position.x}px, ${position.y}px, 0)
+                    rotateY(${this.flipped * 180}deg)
+                    rotateZ(${(this.flipped * 2 - 1) * this.rotation}deg)
+                    scale(${this.scale})
+                `;
+            }
+        }
+
+        class SogAquariumElement extends HTMLElement
+        {
+            constructor()
+            {
+                super();
+            }
+
+            connectedCallback()
+            {
+                let elementToClone = document.createElement("img");
+                elementToClone.src = "data:image/octet-stream;base64,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";
+                elementToClone.setAttribute("draggable", false);
+                elementToClone.style.height = "128px";
+
+                this.creatures = [];
+
+                for(let i = 0; i <= 640; i++)
+                {
+                    this.creatures.push(
+                        new Creature(
+                            i,
+                            this,
+                            elementToClone,
+                            null,
+                            null,
+                            null,
+                            null,
+                            null
+                        )
+                    );
+                }
+
+                console.log(this.creatures);
+
+                this.creatureLimit = 20;
+
+                this.prevTime  = 0;
+                this.deltaTime = 0;
+                this.animate = currentTime =>
+                {
+                    currentTime ??= 0;
+                    this.deltaTime = (currentTime - this.prevTime) / 1000;
+                    this.prevTime  = currentTime;
+
+                    this.creatures.forEach(creature => {
+                        creature.updateBehaviour();
+                        creature.updateTransform();
+                    });
+
+                    requestAnimationFrame(this.animate);
+                };
+
+                this.animate();
+
+                this.prevSize =
+                {
+                    w: this.clientWidth,
+                    h: this.clientHeight,
+                }
+
+                // the soogs will be recentered on resize
+                window.onresize = _ =>
+                {
+                    const sizeDiff =
+                    {
+                        w: (this.clientWidth  - this.prevSize.w) / 2,
+                        h: (this.clientHeight - this.prevSize.h) / 2,
+                    }
+
+                    this.creatures.forEach(creature => {
+                        creature.position.x += sizeDiff.w;
+                        creature.position.y += sizeDiff.h;
+                    });
+
+                    this.prevSize =
+                    {
+                        w: this.clientWidth,
+                        h: this.clientHeight,
+                    }
+                }
+
+                document.getElementById("amount").oninput = event =>
+                {
+                    const amount = Math.round(event.target.value);
+                    this.creatureLimit = amount;
+                    document.getElementById("amount-display").innerText = amount;
+                }
+            }
+
+            disconnectedCallback() {
+            }
+
+            attributeChangedCallback(name, oldValue, newValue) {
+                console.log(`Attribute ${name} has changed.`);
+            }
+        }
+
+        customElements.define("sog-aquarium", SogAquariumElement);
+    </script>
+</body>
+</html>
