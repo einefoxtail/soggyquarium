@@ -123,8 +123,8 @@
             };
             this.position = 
             {
-                x: params?.position?.x ?? rndFloat(0.0, this.aquarium.canvas.width),
-                y: params?.position?.y ?? rndFloat(0.0, this.aquarium.canvas.height)
+                x: params?.position?.x ?? rndFloat(0.0, this.aquarium.size.w),
+                y: params?.position?.y ?? rndFloat(0.0, this.aquarium.size.h)
             };
             this.origin = { x: 0.5, y: 0.5 };
             this.shown = true;
@@ -136,7 +136,7 @@
         {
             if (this.opacity <= 0 && this.iter > this.aquarium.creatureLimit - 1) return;
 
-            const speed = this.aquarium.deltaTime * this.speed; 
+            const speed = this.aquarium.deltaTime * this.speed * this.aquarium.speed;
             this.position.x += Math.sin(this.direction)  * speed;
             this.position.y += -Math.cos(this.direction) * speed;
             this.rotation += (this.flipped ? -speed : speed) / 80;
@@ -149,9 +149,9 @@
             this.isClipping =
             {
                 top:     this.position.y < -overflow,
-                bottom:  this.position.y > this.aquarium.canvas.height + overflow,
+                bottom:  this.position.y > this.aquarium.size.h + overflow,
                 left:    this.position.x < -overflow,
-                right:   this.position.x > this.aquarium.canvas.width  + overflow,
+                right:   this.position.x > this.aquarium.size.w  + overflow,
                 overall: false
             }
             this.isClipping.overall = 
@@ -160,18 +160,10 @@
                 this.isClipping.left   ||
                 this.isClipping.right;
 
-            if (this.isClipping.top)    this.position.y = this.aquarium.canvas.height + overflow;
+            if (this.isClipping.top)    this.position.y = this.aquarium.size.h + overflow;
             if (this.isClipping.bottom) this.position.y = -overflow;
-            if (this.isClipping.left)   this.position.x = this.aquarium.canvas.width + overflow;
+            if (this.isClipping.left)   this.position.x = this.aquarium.size.w + overflow;
             if (this.isClipping.right)  this.position.x = -overflow;
-            
-            // if (this.aquarium.collisions) this.aquarium.creatures.forEach(creature => {
-            //     if (creature.iter == this.iter) return;
-            //     if (distance(creature.position, this.position) < 128)
-            //     {
-            //         this.direction += 180;
-            //     }
-            // });
 
             if (this.aquarium.collisions) for(let i = 0; i < this.aquarium.creatureLimit; i++)
             {
@@ -199,8 +191,8 @@
 
             const size =
             {
-                w: this.scale * this.size.w,
-                h: this.scale * this.size.h,
+                w: this.size.w * this.scale * devicePixelRatio,
+                h: this.size.h * this.scale * devicePixelRatio,
             };
 
             let opacity = this.opacity;
@@ -214,7 +206,7 @@
             }
 
             // this.aquarium.ctx.fillRect(
-            //     Math.floor(this.position.x / this.aquarium.canvas.width * 50) * this.aquarium.canvas.width / 50,
+            //     Math.floor(this.position.x / this.aquarium.size.w * 50) * this.aquarium.size.w / 50,
             //     this.position.y,
             //     60,
             //     60
@@ -223,7 +215,13 @@
             const cos = Math.cos(this.rotation);
             const sin = Math.sin(this.rotation);
 
-            this.aquarium.ctx.setTransform(cos, sin, -sin, cos, this.position.x, this.position.y);
+            this.aquarium.ctx.setTransform(
+                cos,
+                sin,
+                -sin,
+                cos,
+                this.position.x * devicePixelRatio,
+                this.position.y * devicePixelRatio);
 
             this.aquarium.ctx.drawImage(
                 this.img,
@@ -240,6 +238,22 @@
 
     class SogAquariumElement extends HTMLElement
     {
+        #size = { w:0, h:0 };
+        get size()
+        {
+            return this.#size;
+        }
+        set size(x)
+        {
+            this.#size = 
+            {
+                w: x.w,
+                h: x.h,
+            };
+            this.canvas.width  = this.#size.w * devicePixelRatio;
+            this.canvas.height = this.#size.h * devicePixelRatio;
+        }
+
         constructor()
         {
             super();
@@ -248,13 +262,19 @@
         connectedCallback()
         {
             this.canvas = 
-                this.appendChild(document.createElement("canvas"));
-            this.canvas.style.width = "100%";
+            this.appendChild(document.createElement("canvas"));
+            this.canvas.style.width  = "100%";
             this.canvas.style.height = "100%";
-            this.canvas.width  = this.clientWidth  * devicePixelRatio;
-            this.canvas.height = this.clientHeight * devicePixelRatio;
             this.ctx = this.canvas.getContext("2d");
-            this.ctx.fillStyle = "red"
+            this.ctx.fillStyle = "red";
+            
+            this.size =
+            {
+                w: this.clientWidth,
+                h: this.clientHeight
+            };
+            this.prevSize = this.size;
+            this.prevDevicePixelRatio = devicePixelRatio;
 
             this.creatureSprite = document.createElement("img");
             this.creatureSprite.src = "soggymarker.png";
@@ -264,14 +284,10 @@
             this.prevTime  = 0;
             this.deltaTime = 0;
             this.frame     = 0;
-            this.prevSize  =
-            {
-                w: this.clientWidth,
-                h: this.clientHeight,
-            };
+            this.speed     = 1.0;
 
             this.creatureMaxAmount = 4096;
-            this.creatureLimit = 20;
+            this.creatureLimit = 2048;
             document.getElementById("amount").min   = 0;
             document.getElementById("amount").max   = 1;
             document.getElementById("amount").step  = 1e-32;
@@ -299,6 +315,9 @@
 
             this.draw = currentTime =>
             {
+                if (this.prevDevicePixelRatio != devicePixelRatio) this.resize();
+                this.prevDevicePixelRatio = devicePixelRatio;
+
                 currentTime ??= 0;
                 this.deltaTime = (currentTime - this.prevTime) / 1000;
                 this.prevTime  = currentTime;
@@ -320,43 +339,6 @@
                 requestAnimationFrame(this.draw);
             };
 
-            window.addEventListener("load", _ => this.draw());
-
-            // the soogs will be recentered on resize
-            window.addEventListener("resize", _ =>
-            {
-                this.canvas.width  = this.clientWidth  * devicePixelRatio;
-                this.canvas.height = this.clientHeight * devicePixelRatio;
-
-                const sizeDiff =
-                {
-                    w: (this.canvas.width  - this.prevSize.w) / 2,
-                    h: (this.canvas.height - this.prevSize.h) / 2,
-                }
-
-                for(let i = 0; i < this.creatureMaxAmount; i++)
-                {
-                    this.creatures[i].position.x += sizeDiff.w;
-                    this.creatures[i].position.y += sizeDiff.h;
-                }
-
-                this.prevSize =
-                {
-                    w: this.canvas.width,
-                    h: this.canvas.height,
-                }
-            });
-
-            this.onclick = _ =>
-            {
-                for(let i = 0; i < this.creatureLimit; i++)
-                {
-                    this.creatures[i].direction  += rndFloat(-90.0, 90.0);
-                    this.creatures[i].speed =
-                        clamp(5.0, this.creatures[i].speed + rndFloat(-25.0, 20.0), 80.0);
-                }
-            };
-
             document.getElementById("amount").addEventListener("input", event =>
             {
                 let askedLimit = Math.pow(event.target.value, 4);
@@ -367,6 +349,44 @@
                 this.creatureLimit = askedLimit;
                 document.getElementById("amount-display").innerText = askedLimit;
             });
+
+            window.addEventListener("load",   _ => this.draw());
+            window.addEventListener("resize", _ => this.resize());
+            this.addEventListener("click",    _ => this.disrupt());
+        }
+
+        disrupt()
+        {
+            for(let i = 0; i < this.creatureLimit; i++)
+            {
+                this.creatures[i].direction  += rndFloat(-90.0, 90.0);
+                this.creatures[i].speed =
+                    clamp(5.0, this.creatures[i].speed + rndFloat(-25.0, 20.0), 80.0);
+            }
+        }
+
+        resize()
+        {
+            this.prevSize = this.size;
+            this.size =
+            {
+                w: this.clientWidth,
+                h: this.clientHeight
+            };
+
+            const sizeDiff =
+            {
+                w: (this.size.w - this.prevSize.w) / 2,
+                h: (this.size.h - this.prevSize.h) / 2,
+            }
+
+            for(let i = 0; i < this.creatureMaxAmount; i++)
+            {
+                this.creatures[i].position.x += sizeDiff.w;
+                this.creatures[i].position.y += sizeDiff.h;
+            }
+
+            console.debug(`Resize event (${this.size.w}x${this.size.h}x${devicePixelRatio})`);
         }
 
         disconnectedCallback()
